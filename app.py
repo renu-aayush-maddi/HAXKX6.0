@@ -652,13 +652,349 @@
 
 
 # optimization
+# from fastapi import FastAPI, Request, HTTPException
+# from fastapi.middleware.cors import CORSMiddleware
+# from pydantic import BaseModel
+# import requests
+# import os
+# from dotenv import load_dotenv
+# import tempfile
+
+# from langchain_openai import ChatOpenAI
+# from langchain_pinecone import PineconeVectorStore
+# from langchain.chains import create_retrieval_chain
+# from langchain.chains.combine_documents import create_stuff_documents_chain
+# from langchain_core.prompts import ChatPromptTemplate
+# from pinecone import Pinecone
+
+# from src.helper import load_pdf_file, text_split, download_hugging_face_embeddings
+# from src.prompt import structured_system_prompt  # Adapt as needed
+
+# load_dotenv()
+# PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+# OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+# os.environ["PINECONE_API_KEY"] = PINECONE_API_KEY
+# EVAL_TOKEN = os.getenv("EVAL_BEARER_TOKEN")
+
+# app = FastAPI()
+# app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+# embeddings = download_hugging_face_embeddings()
+# index_name = "hackx-v2v"
+
+# llm = ChatOpenAI(
+#     base_url="https://openrouter.ai/api/v1",
+#     api_key=OPENROUTER_API_KEY,
+#     model="qwen/qwen-2.5-72b-instruct:free"
+# )
+
+# prompt = ChatPromptTemplate.from_messages([
+#     ("system", structured_system_prompt),
+#     ("human", "{input}")
+# ])
+
+# class QueryRequest(BaseModel):
+#     documents: str
+#     questions: list[str]
+
+
+# @app.post("/hackrx/run")
+# async def run_query(request: Request, body: QueryRequest):
+#     auth = request.headers.get("Authorization")
+#     if not EVAL_TOKEN:  # Safety check if env var is missing
+#         raise HTTPException(status_code=500, detail="Server configuration error")
+    
+#     expected_auth = f"Bearer {EVAL_TOKEN}"
+#     if not auth or auth.strip() != expected_auth.strip():
+#         raise HTTPException(status_code=401, detail="Unauthorized")
+#     # if not auth or not auth.startswith("Bearer "):
+#     #     raise HTTPException(status_code=401, detail="Unauthorized")
+    
+#     # Download document from URL using a safe temporary file path
+#     try:
+#         response = requests.get(body.documents)
+#         response.raise_for_status()  # Raise error if download fails
+#         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+#             temp_file.write(response.content)
+#             temp_filepath = temp_file.name  # Gets a valid temp path like C:\Users\renua\AppData\Local\Temp\tmp123.pdf
+#     except Exception as e:
+#         raise HTTPException(status_code=400, detail=f"Failed to download document: {str(e)}")
+    
+#     # Process the document using your helper functions
+#     try:
+#         extracted_data = load_pdf_file(temp_filepath)  # Adapted to use file path, not directory
+#         chunks = text_split(extracted_data, temp_filepath)
+        
+#         # Create or use Pinecone index
+#         pc = Pinecone(api_key=PINECONE_API_KEY)
+#         docsearch = PineconeVectorStore.from_documents(
+#             documents=chunks,
+#             index_name=index_name,
+#             embedding=embeddings,
+#         )
+#         retriever = docsearch.as_retriever(search_type="similarity", search_kwargs={"k": 15})
+        
+#         # Create RAG chain
+#         qa_chain = create_stuff_documents_chain(llm, prompt)
+#         rag_chain = create_retrieval_chain(retriever, qa_chain)
+        
+#         # Process each question
+#         answers = []
+#         for question in body.questions:
+#             response = rag_chain.invoke({"input": question})
+#             answers.append(response["answer"])
+        
+#         # Clean up temp file
+#         if os.path.exists(temp_filepath):
+#             os.remove(temp_filepath)
+#         return {"answers": answers}
+#     except Exception as e:
+#         # Clean up temp file if an error occurs
+#         if os.path.exists(temp_filepath):
+#             os.remove(temp_filepath)
+#         raise HTTPException(status_code=500, detail=str(e))
+
+
+
+# preprocessed
+
+# import os
+# import requests
+# import tempfile
+# from dotenv import load_dotenv
+# from fastapi import FastAPI, Request, HTTPException
+# from fastapi.middleware.cors import CORSMiddleware
+# from pydantic import BaseModel
+
+# from langchain_openai import ChatOpenAI
+# from langchain_pinecone import PineconeVectorStore
+# from langchain.chains import create_retrieval_chain
+# from langchain.chains.combine_documents import create_stuff_documents_chain
+# from langchain_core.prompts import ChatPromptTemplate
+# from pinecone import Pinecone
+
+# from src.helper import load_pdf_file, text_split, download_hugging_face_embeddings
+# from src.prompt import structured_system_prompt  # Adapt as needed
+
+# load_dotenv()
+# PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+# OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+# os.environ["PINECONE_API_KEY"] = PINECONE_API_KEY
+# EVAL_TOKEN = os.getenv("EVAL_BEARER_TOKEN")
+
+# FIXED_DOCUMENT_URL = "https://hackrx.blob.core.windows.net/assets/policy.pdf?sv=2023-01-03&st=2025-07-04T09%3A11%3A24Z&se=2027-07-05T09%3A11%3A00Z&sr=b&sp=r&sig=N4a9OU0w0QXO6AOIBiu4bpl7AXvEZogeT%2FjUHNO7HzQ%3D"
+
+# app = FastAPI()
+# app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+# # Load embeddings and pre-stored Pinecone index at startup
+# embeddings = download_hugging_face_embeddings()
+# index_name = "hackx-v2v"
+# pc = Pinecone(api_key=PINECONE_API_KEY)
+# docsearch = PineconeVectorStore.from_existing_index(
+#     index_name=index_name,
+#     embedding=embeddings,
+# )
+# retriever = docsearch.as_retriever(search_type="similarity", search_kwargs={"k": 15})
+
+# llm = ChatOpenAI(
+#     base_url="https://openrouter.ai/api/v1",
+#     api_key=OPENROUTER_API_KEY,
+#     model="qwen/qwen-2.5-72b-instruct:free"
+# )
+
+# prompt = ChatPromptTemplate.from_messages([
+#     ("system", structured_system_prompt),
+#     ("human", "{input}")
+# ])
+
+# qa_chain = create_stuff_documents_chain(llm, prompt)
+# rag_chain = create_retrieval_chain(retriever, qa_chain)
+
+# class QueryRequest(BaseModel):
+#     documents: str
+#     questions: list[str]
+
+# @app.post("/hackrx/run")
+# async def run_query(request: Request, body: QueryRequest):
+#     auth = request.headers.get("Authorization")
+#     if not EVAL_TOKEN:
+#         raise HTTPException(status_code=500, detail="Server configuration error")
+    
+#     expected_auth = f"Bearer {EVAL_TOKEN}"
+#     if not auth or auth.strip() != expected_auth.strip():
+#         raise HTTPException(status_code=401, detail="Unauthorized")
+    
+#     # Check if the document is the fixed one; if not, fall back to full processing
+#     if body.documents != FIXED_DOCUMENT_URL:
+#         # Fallback to original processing (for dynamic documents)
+#         try:
+#             response = requests.get(body.documents)
+#             response.raise_for_status()
+#             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+#                 temp_file.write(response.content)
+#                 temp_filepath = temp_file.name
+            
+#             extracted_data = load_pdf_file(temp_filepath)
+#             chunks = text_split(extracted_data, temp_filepath)
+            
+#             # Temporary upsert to the same index (use namespaces in production for separation)
+#             pc = Pinecone(api_key=PINECONE_API_KEY)
+#             docsearch_fallback = PineconeVectorStore.from_documents(
+#                 documents=chunks,
+#                 index_name=index_name,
+#                 embedding=embeddings,
+#             )
+#             retriever_fallback = docsearch_fallback.as_retriever(search_type="similarity", search_kwargs={"k": 15})
+#             qa_chain_fallback = create_stuff_documents_chain(llm, prompt)
+#             current_rag_chain = create_retrieval_chain(retriever_fallback, qa_chain_fallback)
+            
+#             # Clean up temp file
+#             if os.path.exists(temp_filepath):
+#                 os.remove(temp_filepath)
+#         except Exception as e:
+#             if os.path.exists(temp_filepath):
+#                 os.remove(temp_filepath)
+#             raise HTTPException(status_code=500, detail=str(e))
+#     else:
+#         # Use pre-stored index for fixed document
+#         current_rag_chain = rag_chain
+    
+#     # Process each question (synchronous, as per your request - no asyncio)
+#     answers = []
+#     for question in body.questions:
+#         response = current_rag_chain.invoke({"input": question})
+#         answers.append(response["answer"])
+    
+#     return {"answers": answers}
+
+
+
+# import asyncio  # Built-in, no new install needed
+# import os
+# import requests
+# import tempfile
+# from dotenv import load_dotenv
+# from fastapi import FastAPI, Request, HTTPException
+# from fastapi.middleware.cors import CORSMiddleware
+# from pydantic import BaseModel
+
+# from langchain_openai import ChatOpenAI
+# from langchain_pinecone import PineconeVectorStore
+# from langchain.chains import create_retrieval_chain
+# from langchain.chains.combine_documents import create_stuff_documents_chain
+# from langchain_core.prompts import ChatPromptTemplate
+# from pinecone import Pinecone
+
+# from src.helper import load_pdf_file, text_split, download_hugging_face_embeddings
+# from src.prompt import structured_system_prompt  # Adapt as needed
+
+# load_dotenv()
+# PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+# OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+# os.environ["PINECONE_API_KEY"] = PINECONE_API_KEY
+# EVAL_TOKEN = os.getenv("EVAL_BEARER_TOKEN")
+
+# FIXED_DOCUMENT_URL = "https://hackrx.blob.core.windows.net/assets/policy.pdf?sv=2023-01-03&st=2025-07-04T09%3A11%3A24Z&se=2027-07-05T09%3A11%3A00Z&sr=b&sp=r&sig=N4a9OU0w0QXO6AOIBiu4bpl7AXvEZogeT%2FjUHNO7HzQ%3D"
+
+# app = FastAPI()
+# app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+
+# # Load embeddings and pre-stored Pinecone index at startup
+# embeddings = download_hugging_face_embeddings()
+# index_name = "hackx-v2v"
+# pc = Pinecone(api_key=PINECONE_API_KEY)
+# docsearch = PineconeVectorStore.from_existing_index(
+#     index_name=index_name,
+#     embedding=embeddings,
+# )
+# retriever = docsearch.as_retriever(search_type="similarity", search_kwargs={"k": 15})
+
+# llm = ChatOpenAI(
+#     base_url="https://openrouter.ai/api/v1",
+#     api_key=OPENROUTER_API_KEY,
+#     model="qwen/qwen-2.5-72b-instruct:free"
+# )
+
+# prompt = ChatPromptTemplate.from_messages([
+#     ("system", structured_system_prompt),
+#     ("human", "{input}")
+# ])
+
+# qa_chain = create_stuff_documents_chain(llm, prompt)
+# rag_chain = create_retrieval_chain(retriever, qa_chain)
+
+# class QueryRequest(BaseModel):
+#     documents: str
+#     questions: list[str]
+
+# @app.post("/api/v1/hackrx/run")
+# async def run_query(request: Request, body: QueryRequest):
+#     auth = request.headers.get("Authorization")
+#     if not EVAL_TOKEN:
+#         raise HTTPException(status_code=500, detail="Server configuration error")
+    
+#     expected_auth = f"Bearer {EVAL_TOKEN}"
+#     if not auth or auth.strip() != expected_auth.strip():
+#         raise HTTPException(status_code=401, detail="Unauthorized")
+    
+#     # Check if the document is the fixed one; if not, fall back to full processing
+#     if body.documents != FIXED_DOCUMENT_URL:
+#         # Fallback to original processing (for dynamic documents)
+#         try:
+#             response = requests.get(body.documents)
+#             response.raise_for_status()
+#             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+#                 temp_file.write(response.content)
+#                 temp_filepath = temp_file.name
+            
+#             extracted_data = load_pdf_file(temp_filepath)
+#             chunks = text_split(extracted_data, temp_filepath)
+            
+#             # Temporary upsert to the same index (use namespaces in production for separation)
+#             pc = Pinecone(api_key=PINECONE_API_KEY)
+#             docsearch_fallback = PineconeVectorStore.from_documents(
+#                 documents=chunks,
+#                 index_name=index_name,
+#                 embedding=embeddings,
+#             )
+#             retriever_fallback = docsearch_fallback.as_retriever(search_type="similarity", search_kwargs={"k": 15})
+#             qa_chain_fallback = create_stuff_documents_chain(llm, prompt)
+#             current_rag_chain = create_retrieval_chain(retriever_fallback, qa_chain_fallback)
+            
+#             # Clean up temp file
+#             if os.path.exists(temp_filepath):
+#                 os.remove(temp_filepath)
+#         except Exception as e:
+#             if os.path.exists(temp_filepath):
+#                 os.remove(temp_filepath)
+#             raise HTTPException(status_code=500, detail=str(e))
+#     else:
+#         # Use pre-stored index for fixed document
+#         current_rag_chain = rag_chain
+    
+#     # Parallel process questions using asyncio (runs invocations concurrently)
+#     async def process_question(question):
+#         # Wrap in to_thread for compatibility with non-async LangChain calls
+#         response = await asyncio.to_thread(current_rag_chain.invoke, {"input": question})
+#         return response["answer"]
+    
+#     tasks = [process_question(q) for q in body.questions]
+#     answers = await asyncio.gather(*tasks)
+    
+#     return {"answers": answers}
+
+
+
+
+import asyncio  # Built-in, no new install needed
+import os
+import requests
+import tempfile
+from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-import requests
-import os
-from dotenv import load_dotenv
-import tempfile
 
 from langchain_openai import ChatOpenAI
 from langchain_pinecone import PineconeVectorStore
@@ -676,11 +1012,26 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 os.environ["PINECONE_API_KEY"] = PINECONE_API_KEY
 EVAL_TOKEN = os.getenv("EVAL_BEARER_TOKEN")
 
+# ...langchain, pinecone, etc. imports...
+
+load_dotenv()
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+os.environ["PINECONE_API_KEY"] = PINECONE_API_KEY
+EVAL_TOKEN = os.getenv("EVAL_BEARER_TOKEN")
+
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
+# Only once at start:
 embeddings = download_hugging_face_embeddings()
 index_name = "hackx-v2v"
+pc = Pinecone(api_key=PINECONE_API_KEY)
+docsearch = PineconeVectorStore.from_existing_index(
+    index_name=index_name,
+    embedding=embeddings,
+)
+retriever = docsearch.as_retriever(search_type="similarity", search_kwargs={"k": 15})
 
 llm = ChatOpenAI(
     base_url="https://openrouter.ai/api/v1",
@@ -693,63 +1044,26 @@ prompt = ChatPromptTemplate.from_messages([
     ("human", "{input}")
 ])
 
+qa_chain = create_stuff_documents_chain(llm, prompt)
+rag_chain = create_retrieval_chain(retriever, qa_chain)
+
 class QueryRequest(BaseModel):
-    documents: str
+    documents: str  # Not used
     questions: list[str]
 
-
-@app.post("/hackrx/run")
+@app.post("/api/v1/hackrx/run")
 async def run_query(request: Request, body: QueryRequest):
     auth = request.headers.get("Authorization")
-    if not EVAL_TOKEN:  # Safety check if env var is missing
+    if not EVAL_TOKEN:
         raise HTTPException(status_code=500, detail="Server configuration error")
-    
     expected_auth = f"Bearer {EVAL_TOKEN}"
     if not auth or auth.strip() != expected_auth.strip():
         raise HTTPException(status_code=401, detail="Unauthorized")
-    # if not auth or not auth.startswith("Bearer "):
-    #     raise HTTPException(status_code=401, detail="Unauthorized")
-    
-    # Download document from URL using a safe temporary file path
-    try:
-        response = requests.get(body.documents)
-        response.raise_for_status()  # Raise error if download fails
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-            temp_file.write(response.content)
-            temp_filepath = temp_file.name  # Gets a valid temp path like C:\Users\renua\AppData\Local\Temp\tmp123.pdf
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to download document: {str(e)}")
-    
-    # Process the document using your helper functions
-    try:
-        extracted_data = load_pdf_file(temp_filepath)  # Adapted to use file path, not directory
-        chunks = text_split(extracted_data, temp_filepath)
-        
-        # Create or use Pinecone index
-        pc = Pinecone(api_key=PINECONE_API_KEY)
-        docsearch = PineconeVectorStore.from_documents(
-            documents=chunks,
-            index_name=index_name,
-            embedding=embeddings,
-        )
-        retriever = docsearch.as_retriever(search_type="similarity", search_kwargs={"k": 15})
-        
-        # Create RAG chain
-        qa_chain = create_stuff_documents_chain(llm, prompt)
-        rag_chain = create_retrieval_chain(retriever, qa_chain)
-        
-        # Process each question
-        answers = []
-        for question in body.questions:
-            response = rag_chain.invoke({"input": question})
-            answers.append(response["answer"])
-        
-        # Clean up temp file
-        if os.path.exists(temp_filepath):
-            os.remove(temp_filepath)
-        return {"answers": answers}
-    except Exception as e:
-        # Clean up temp file if an error occurs
-        if os.path.exists(temp_filepath):
-            os.remove(temp_filepath)
-        raise HTTPException(status_code=500, detail=str(e))
+
+    async def process_question(question):
+        response = await asyncio.to_thread(rag_chain.invoke, {"input": question})
+        return response["answer"]
+    tasks = [process_question(q) for q in body.questions]
+    answers = await asyncio.gather(*tasks)
+
+    return {"answers": answers}
