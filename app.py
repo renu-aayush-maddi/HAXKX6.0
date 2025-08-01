@@ -652,35 +652,36 @@
 
 
 # optimization
-# from fastapi import FastAPI, Request, HTTPException
-# from fastapi.middleware.cors import CORSMiddleware
-# from pydantic import BaseModel
-# import requests
-# import os
-# from dotenv import load_dotenv
-# import tempfile
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import requests
+import os
+from dotenv import load_dotenv
+import tempfile
 
-# from langchain_openai import ChatOpenAI
-# from langchain_pinecone import PineconeVectorStore
-# from langchain.chains import create_retrieval_chain
-# from langchain.chains.combine_documents import create_stuff_documents_chain
-# from langchain_core.prompts import ChatPromptTemplate
-# from pinecone import Pinecone
+from langchain_openai import ChatOpenAI
+from langchain_pinecone import PineconeVectorStore
+from langchain.chains import create_retrieval_chain
+from langchain.chains.combine_documents import create_stuff_documents_chain
+from langchain_core.prompts import ChatPromptTemplate
+from pinecone import Pinecone
 
-# from src.helper import load_pdf_file, text_split, download_hugging_face_embeddings
-# from src.prompt import structured_system_prompt  # Adapt as needed
+from src.helper import load_pdf_file, text_split, download_hugging_face_embeddings
+from src.prompt import structured_system_prompt  # Adapt as needed
+import asyncio
+import time
+load_dotenv()
+PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+os.environ["PINECONE_API_KEY"] = PINECONE_API_KEY
+EVAL_TOKEN = os.getenv("EVAL_BEARER_TOKEN")
 
-# load_dotenv()
-# PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-# OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-# os.environ["PINECONE_API_KEY"] = PINECONE_API_KEY
-# EVAL_TOKEN = os.getenv("EVAL_BEARER_TOKEN")
+app = FastAPI()
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-# app = FastAPI()
-# app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
-
-# embeddings = download_hugging_face_embeddings()
-# index_name = "hackx-v2v"
+embeddings = download_hugging_face_embeddings()
+index_name = "hackx3072"
 
 # llm = ChatOpenAI(
 #     base_url="https://openrouter.ai/api/v1",
@@ -688,71 +689,92 @@
 #     model="qwen/qwen-2.5-72b-instruct:free"
 # )
 
-# prompt = ChatPromptTemplate.from_messages([
-#     ("system", structured_system_prompt),
-#     ("human", "{input}")
-# ])
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-# class QueryRequest(BaseModel):
-#     documents: str
-#     questions: list[str]
+llm = ChatOpenAI(
+    openai_api_key=OPENAI_API_KEY,
+    model="gpt-4o-mini"  # Use the model name "gpt-4o-mini"
+)
+
+prompt = ChatPromptTemplate.from_messages([
+    ("system", structured_system_prompt),
+    ("human", "{input}")
+])
+
+class QueryRequest(BaseModel):
+    documents: str
+    questions: list[str]
 
 
-# @app.post("/hackrx/run")
-# async def run_query(request: Request, body: QueryRequest):
-#     auth = request.headers.get("Authorization")
-#     if not EVAL_TOKEN:  # Safety check if env var is missing
-#         raise HTTPException(status_code=500, detail="Server configuration error")
+@app.post("/hackrx/run")
+async def run_query(request: Request, body: QueryRequest):
+    t0 = time.time()
+    auth = request.headers.get("Authorization")
+    if not EVAL_TOKEN:  # Safety check if env var is missing
+        raise HTTPException(status_code=500, detail="Server configuration error")
     
-#     expected_auth = f"Bearer {EVAL_TOKEN}"
-#     if not auth or auth.strip() != expected_auth.strip():
-#         raise HTTPException(status_code=401, detail="Unauthorized")
-#     # if not auth or not auth.startswith("Bearer "):
-#     #     raise HTTPException(status_code=401, detail="Unauthorized")
+    expected_auth = f"Bearer {EVAL_TOKEN}"
+    if not auth or auth.strip() != expected_auth.strip():
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    # Download document from URL using a safe temporary file path
+    try:
+        t1 = time.time()
+        response = requests.get(body.documents)
+        response.raise_for_status()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+            temp_file.write(response.content)
+            temp_filepath = temp_file.name
+        print(f"PDF download time: {time.time() - t1:.2f} s")
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to download document: {str(e)}")
     
-#     # Download document from URL using a safe temporary file path
-#     try:
-#         response = requests.get(body.documents)
-#         response.raise_for_status()  # Raise error if download fails
-#         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-#             temp_file.write(response.content)
-#             temp_filepath = temp_file.name  # Gets a valid temp path like C:\Users\renua\AppData\Local\Temp\tmp123.pdf
-#     except Exception as e:
-#         raise HTTPException(status_code=400, detail=f"Failed to download document: {str(e)}")
-    
-#     # Process the document using your helper functions
-#     try:
-#         extracted_data = load_pdf_file(temp_filepath)  # Adapted to use file path, not directory
-#         chunks = text_split(extracted_data, temp_filepath)
+    try:
+        t1 = time.time()
+        extracted_data = load_pdf_file(temp_filepath)
+        print(f"load_pdf_file (text extraction) time: {time.time() - t1:.2f} s")
         
-#         # Create or use Pinecone index
-#         pc = Pinecone(api_key=PINECONE_API_KEY)
-#         docsearch = PineconeVectorStore.from_documents(
-#             documents=chunks,
-#             index_name=index_name,
-#             embedding=embeddings,
-#         )
-#         retriever = docsearch.as_retriever(search_type="similarity", search_kwargs={"k": 15})
-        
-#         # Create RAG chain
-#         qa_chain = create_stuff_documents_chain(llm, prompt)
-#         rag_chain = create_retrieval_chain(retriever, qa_chain)
-        
-#         # Process each question
-#         answers = []
-#         for question in body.questions:
-#             response = rag_chain.invoke({"input": question})
-#             answers.append(response["answer"])
-        
-#         # Clean up temp file
-#         if os.path.exists(temp_filepath):
-#             os.remove(temp_filepath)
-#         return {"answers": answers}
-#     except Exception as e:
-#         # Clean up temp file if an error occurs
-#         if os.path.exists(temp_filepath):
-#             os.remove(temp_filepath)
-#         raise HTTPException(status_code=500, detail=str(e))
+        t2 = time.time()
+        chunks = text_split(extracted_data, temp_filepath)
+        print(f"text_split (chunking/OCR) time: {time.time() - t2:.2f} s")
+
+        t3 = time.time()
+        pc = Pinecone(api_key=PINECONE_API_KEY)
+        # Embeddings and upsert happen inside from_documents
+        docsearch = PineconeVectorStore.from_documents(
+            documents=chunks,
+            index_name=index_name,
+            embedding=embeddings,
+        )
+        print(f"Embeddings + upsert time: {time.time() - t3:.2f} s")
+
+        t4 = time.time()
+        retriever = docsearch.as_retriever(search_type="similarity", search_kwargs={"k": 15})
+        qa_chain = create_stuff_documents_chain(llm, prompt)
+        rag_chain = create_retrieval_chain(retriever, qa_chain)
+
+        async def process_question(q):
+            response = await asyncio.to_thread(rag_chain.invoke, {"input": q})
+            return response["answer"]
+        answers = await asyncio.gather(*[process_question(q) for q in body.questions])
+
+        print(f"Parallel Q+A time: {time.time() - t4:.2f} s")
+
+        total = time.time() - t0
+        print(f"TOTAL PIPELINE TIME: {total:.2f} s")
+        # Clean up...
+        if os.path.exists(temp_filepath):
+            os.remove(temp_filepath)
+        return {"answers": answers}
+    except Exception as e:
+        # Clean up temp file if an error occurs
+        if os.path.exists(temp_filepath):
+            os.remove(temp_filepath)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 
 
 
@@ -1002,8 +1024,10 @@ from langchain.chains import create_retrieval_chain
 from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
 from pinecone import Pinecone
+from langchain_openai import ChatOpenAI
+import os
 
-from src.helper import load_pdf_file, text_split, download_hugging_face_embeddings
+from src.helper import download_hugging_face_embeddings
 from src.prompt import structured_system_prompt  # Adapt as needed
 
 load_dotenv()
@@ -1025,18 +1049,26 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, 
 
 # Only once at start:
 embeddings = download_hugging_face_embeddings()
-index_name = "hackx-v2v"
+index_name = "hackx3072"
 pc = Pinecone(api_key=PINECONE_API_KEY)
 docsearch = PineconeVectorStore.from_existing_index(
     index_name=index_name,
     embedding=embeddings,
 )
-retriever = docsearch.as_retriever(search_type="similarity", search_kwargs={"k": 15})
+retriever = docsearch.as_retriever(search_type="similarity", search_kwargs={"k": 8})
+
+# llm = ChatOpenAI(
+#     base_url="https://openrouter.ai/api/v1",
+#     api_key=OPENROUTER_API_KEY,
+#     model="qwen/qwen-2.5-72b-instruct:free"
+# )
+
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 llm = ChatOpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=OPENROUTER_API_KEY,
-    model="qwen/qwen-2.5-72b-instruct:free"
+    openai_api_key=OPENAI_API_KEY,
+    model="gpt-4o-mini"  # Use the model name "gpt-4o-mini"
 )
 
 prompt = ChatPromptTemplate.from_messages([

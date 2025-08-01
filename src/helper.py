@@ -139,6 +139,8 @@ import re
 import os
 import json
 import io
+import time
+t0 = time.time()
 
 # Google Drive API imports
 from google.oauth2.credentials import Credentials
@@ -146,8 +148,116 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 from google.auth.transport.requests import Request
+from concurrent.futures import ThreadPoolExecutor
+from langchain_huggingface import HuggingFaceEmbeddings
+import os
 
 
+
+
+SECTION_PATTERN = re.compile(r'^((Section|Clause|Article)\s+[A-Za-z0-9.\-]+)', re.IGNORECASE | re.MULTILINE)
+DEFINITION_PATTERN = re.compile(r'^(Definition[s]?[\sof]*[\w\s]*)[:\-]?', re.IGNORECASE | re.MULTILINE)
+ITEM_PATTERN = re.compile(r'^\s*([0-9]+\.?|[a-z]{1,2}\)|[ivxlc]+\.?)', re.IGNORECASE)
+TABLE_HEADING_PATTERN = re.compile(r'^(Table\s+of\s+\w+.*|Schedule\s+of\s+Benefits.*)', re.IGNORECASE)
+
+def clean_heading(text):
+    "Quickly normalize heading/section/definition lines"
+    return ' '.join(text.strip().split())
+
+def atomic_chunker(full_text):
+    lines = full_text.splitlines()
+    section = None
+    heading = None
+    clause = None
+    current_type = None
+    chunks = []
+    buffer = ""
+    meta = {}
+
+    for i, line in enumerate(lines):
+        line_clean = line.strip()
+
+        # Try to detect new section
+        sect_match = SECTION_PATTERN.match(line_clean)
+        if sect_match:
+            # Save any current buffer as chunk before starting new section
+            if buffer.strip():
+                chunks.append(Document(
+                    page_content=buffer.strip(),
+                    metadata=meta.copy()
+                ))
+                buffer = ""
+            section = clean_heading(line_clean)
+            meta = {"section": section, "chunk_type": "section"}
+            continue  # Section heading line doesn't need to go into buffer
+
+        # Try to detect new definition
+        def_match = DEFINITION_PATTERN.match(line_clean)
+        if def_match:
+            if buffer.strip():
+                chunks.append(Document(
+                    page_content=buffer.strip(),
+                    metadata=meta.copy()
+                ))
+                buffer = ""
+            heading = clean_heading(line_clean)
+            meta = {
+                "section": section or "",
+                "parent_heading": heading,
+                "chunk_type": "definition"
+            }
+            continue
+
+        # Try to detect table heading
+        table_match = TABLE_HEADING_PATTERN.match(line_clean)
+        if table_match:
+            if buffer.strip():
+                chunks.append(Document(
+                    page_content=buffer.strip(),
+                    metadata=meta.copy()
+                ))
+                buffer = ""
+            heading = clean_heading(line_clean)
+            meta = {
+                "section": section or "",
+                "parent_heading": heading,
+                "chunk_type": "table"
+            }
+            buffer += line_clean + "\n"
+            continue
+
+        # Try to detect itemized list (for exclusions, etc.)
+        item_match = ITEM_PATTERN.match(line_clean)
+        if item_match and buffer:
+            # Each previous buffer (item) emitted as chunk, start new one
+            chunks.append(Document(
+                page_content=buffer.strip(),
+                metadata=meta.copy()
+            ))
+            buffer = ""
+            # Set up metadata for next chunk
+            current_type = meta.get("chunk_type")
+            if current_type in ["definition", "section"]:
+                # If under a section or definition, treat as clause/item
+                meta = {
+                    "section": section or "",
+                    "parent_heading": heading or "",
+                    "chunk_type": "item"
+                }
+            else:
+                meta = {
+                    "chunk_type": "item"
+                }
+        # Add current line to buffer
+        buffer += line + "\n"
+
+    # Flush any buffer left at end
+    if buffer.strip():
+        chunks.append(Document(
+            page_content=buffer.strip(),
+            metadata=meta.copy()
+        ))
+    return chunks
 
 CHUNK_BOUNDARY_PATTERN = re.compile(
     r"""(
@@ -233,6 +343,7 @@ def load_pdf_file(data):
                             metadata={"source": filename, "page": page_num}
                         ))
     return documents
+
 
 
 def extract_clause(text):
@@ -321,9 +432,11 @@ def text_split(extracted_data, pdf_path):
     except Exception as e:
         print(f"Google OCR failed ({str(e)}), falling back to pdfplumber...")
         fallback_docs = load_pdf_file(pdf_path)
+        print("Extraction time:", time.time()-t0)
         full_text = "\n\n".join([doc.page_content for doc in fallback_docs])
 
-    chunks = semantic_regex_chunker(full_text)
+    # chunks = semantic_regex_chunker(full_text)
+    chunks = atomic_chunker(full_text)
 
     # Enhance metadata for better retrieval and explainability (if you want to keep these)
     for i, chunk in enumerate(chunks):
@@ -335,64 +448,119 @@ def text_split(extracted_data, pdf_path):
 
     return chunks
 
-# def text_split(extracted_data, pdf_path):
-    """
-    Updated text_split using Google Drive OCR for cloud-based text extraction
-    This replaces the unstructured library approach to avoid Tesseract dependency
-    """
-    try:
-        # Step 1: Extract text using Google Drive OCR (cloud-based, high accuracy)
-        extracted_text = extract_text_with_google_ocr(pdf_path)
-        
-        # Step 2: Convert to LangChain Document
-        documents = [Document(
-            page_content=extracted_text, 
-            metadata={"source": os.path.basename(pdf_path), "ocr_method": "google_drive"}
-        )]
-        
-    except Exception as e:
-        # Fallback to basic pdfplumber extraction if Google OCR fails
-        print(f"Google OCR failed ({str(e)}), falling back to pdfplumber...")
-        fallback_docs = load_pdf_file(pdf_path)
-        combined_text = "\n\n".join([doc.page_content for doc in fallback_docs])
-        documents = [Document(
-            page_content=combined_text,
-            metadata={"source": os.path.basename(pdf_path), "ocr_method": "pdfplumber_fallback"}
-        )]
-    
-    # Step 3: Split large text into chunks, respecting policy structures
-    text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1500,  # Larger chunks to fit full clauses
-        chunk_overlap=400,  # More overlap to prevent mid-clause breaks
-        separators=[
-            "\n\n",  # Paragraph breaks
-            "\n",    # Line breaks
-            "Clause ", "Section ", "Article ",  # Policy-specific separators
-            ".",     # Sentence ends
-            " "      # Fallback
-        ],
-        keep_separator=True  # Keeps separators in chunks for context
-    )
-    chunks = text_splitter.split_documents(documents)
-    
-    # Step 4: Enhance metadata for better retrieval and explainability
-    for i, chunk in enumerate(chunks):
-        clause = extract_clause(chunk.page_content)
-        chunk.metadata["clause"] = clause if clause else "Unknown"
-        chunk.metadata["contains_table"] = ("|" in chunk.page_content or "-" in chunk.page_content)
-        chunk.metadata["chunk_id"] = i
-        
-        # Estimate page number based on chunk position (rough approximation)
-        estimated_page = (i // 3) + 1  # Assuming ~3 chunks per page on average
-        chunk.metadata["estimated_page"] = estimated_page
-    
-    return chunks
+from langchain_openai import OpenAIEmbeddings
+import os
 
 
 def download_hugging_face_embeddings():
-    embeddings = HuggingFaceEmbeddings(model_name='BAAI/bge-large-en-v1.5')  
+    embeddings = OpenAIEmbeddings(
+        model="text-embedding-3-large",  # State-of-the-art OpenAI embeddings
+        openai_api_key=os.getenv("OPENAI_API_KEY")
+    )
     return embeddings
 
+# def download_hugging_face_embeddings():
+#     embeddings = HuggingFaceEmbeddings(model_name='BAAI/bge-large-en-v1.5')  
+#     return embeddings
+
+
+# import os
+# import requests
+# from dotenv import load_dotenv
+
+# load_dotenv()
+
+# class RemoteCohereEmbeddings:
+#     def __init__(self, api_key: str, model: str = "embed-english-v3.0"):
+#         self.api_key = api_key
+#         self.model = model
+#         self.api_url = "https://api.cohere.ai/v1/embed"
+#         self.headers = {
+#             "Authorization": f"Bearer {self.api_key}",
+#             "Content-Type": "application/json"
+#         }
+
+#     def embed_documents(self, texts):
+#         payload = {
+#             "model": self.model,
+#             "texts": texts,
+#             "input_type": "search_document"
+#         }
+#         response = requests.post(self.api_url, headers=self.headers, json=payload)
+#         if response.status_code == 200:
+#             return response.json()["embeddings"]
+#         else:
+#             raise RuntimeError(f"Cohere API Error: {response.status_code} {response.text}")
+
+#     def embed_query(self, text):
+#         return self.embed_documents([text])[0]
+
+# def download_hugging_face_embeddings():
+#     # 👇 Return Cohere embedding wrapper instead
+#     api_key = os.getenv("COHERE_API_KEY")
+#     if not api_key:
+#         raise ValueError("Missing COHERE_API_KEY in environment variables")
+#     return RemoteCohereEmbeddings(api_key=api_key)
+
+
+# def text_split(extracted_data, pdf_path):
+    # """
+    # Updated text_split using Google Drive OCR for cloud-based text extraction
+    # This replaces the unstructured library approach to avoid Tesseract dependency
+    # """
+    # try:
+    #     # Step 1: Extract text using Google Drive OCR (cloud-based, high accuracy)
+    #     extracted_text = extract_text_with_google_ocr(pdf_path)
+        
+    #     # Step 2: Convert to LangChain Document
+    #     documents = [Document(
+    #         page_content=extracted_text, 
+    #         metadata={"source": os.path.basename(pdf_path), "ocr_method": "google_drive"}
+    #     )]
+        
+    # except Exception as e:
+    #     # Fallback to basic pdfplumber extraction if Google OCR fails
+    #     print(f"Google OCR failed ({str(e)}), falling back to pdfplumber...")
+    #     fallback_docs = load_pdf_file(pdf_path)
+    #     combined_text = "\n\n".join([doc.page_content for doc in fallback_docs])
+    #     documents = [Document(
+    #         page_content=combined_text,
+    #         metadata={"source": os.path.basename(pdf_path), "ocr_method": "pdfplumber_fallback"}
+    #     )]
+    
+    # # Step 3: Split large text into chunks, respecting policy structures
+    # text_splitter = RecursiveCharacterTextSplitter(
+    #     chunk_size=1500,  # Larger chunks to fit full clauses
+    #     chunk_overlap=400,  # More overlap to prevent mid-clause breaks
+    #     separators=[
+    #         "\n\n",  # Paragraph breaks
+    #         "\n",    # Line breaks
+    #         "Clause ", "Section ", "Article ",  # Policy-specific separators
+    #         ".",     # Sentence ends
+    #         " "      # Fallback
+    #     ],
+    #     keep_separator=True  # Keeps separators in chunks for context
+    # )
+    # chunks = text_splitter.split_documents(documents)
+    
+    # # Step 4: Enhance metadata for better retrieval and explainability
+    # for i, chunk in enumerate(chunks):
+    #     clause = extract_clause(chunk.page_content)
+    #     chunk.metadata["clause"] = clause if clause else "Unknown"
+    #     chunk.metadata["contains_table"] = ("|" in chunk.page_content or "-" in chunk.page_content)
+    #     chunk.metadata["chunk_id"] = i
+        
+    #     # Estimate page number based on chunk position (rough approximation)
+    #     estimated_page = (i // 3) + 1  # Assuming ~3 chunks per page on average
+    #     chunk.metadata["estimated_page"] = estimated_page
+    
+    # return chunks
+
+
+
+
+
+# BAAI/bge-large-en-v1.5
 # from langchain_community.document_loaders import PyPDFLoader, DirectoryLoader
 # from langchain_huggingface import HuggingFaceEmbeddings
 # from langchain.text_splitter import RecursiveCharacterTextSplitter

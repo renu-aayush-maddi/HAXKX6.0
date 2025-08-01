@@ -16,11 +16,11 @@ from pinecone import ServerlessSpec
 
 def create_pinecone_index():
     pc = Pinecone(api_key=PINECONE_API_KEY)
-    index_name = "hackx-v2"  # New name
+    index_name = "hackx3072"  # New name
     if index_name not in pc.list_indexes().names():
         pc.create_index(
             name=index_name,
-            dimension=768,  # For new embeddings
+            dimension=3072,  # For new embeddings
             metric="cosine",
             spec=ServerlessSpec(cloud="aws", region="us-east-1")
         )

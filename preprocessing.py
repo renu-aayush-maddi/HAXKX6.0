@@ -6,10 +6,10 @@ from pinecone import Pinecone
 
 load_dotenv()
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-index_name = "hackx-v2v"  # Your existing index
+index_name = "hackx3072"  # Your existing index
 
 # Download the fixed document (run once)
-document_url = "https://hackrx.blob.core.windows.net/assets/policy.pdf?sv=2023-01-03&st=2025-07-04T09%3A11%3A24Z&se=2027-07-05T09%3A11%3A00Z&sr=b&sp=r&sig=N4a9OU0w0QXO6AOIBiu4bpl7AXvEZogeT%2FjUHNO7HzQ%3D"
+document_url = "https://hackrx.blob.core.windows.net/assets/Arogya%20Sanjeevani%20Policy%20-%20CIN%20-%20U10200WB1906GOI001713%201.pdf?sv=2023-01-03&st=2025-07-21T08%3A29%3A02Z&se=2025-09-22T08%3A29%3A00Z&sr=b&sp=r&sig=nzrz1K9Iurt%2BBXom%2FB%2BMPTFMFP3PRnIvEsipAX10Ig4%3D"
 import requests, tempfile
 response = requests.get(document_url)
 with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
