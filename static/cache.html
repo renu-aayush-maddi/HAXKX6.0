@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>QA Cache Manager</title>
+  <script>
+    async function loadCache() {
+      const res = await fetch("/api/v1/hackrx/cache");
+      const data = await res.json();
+      document.getElementById("cacheList").innerHTML = "";
+      data.forEach(({question, answer}) => {
+        document.getElementById("cacheList").innerHTML += `
+          <div>
+            <strong>Q:</strong> <input type="text" value="${question}" size="50" disabled><br>
+            <strong>A:</strong> <input type="text" id="answer_${btoa(question)}" value="${answer}" size="70">
+            <button onclick="update('${encodeURIComponent(question)}')">Update</button>
+            <button onclick="del('${encodeURIComponent(question)}')">Delete</button>
+          </div><hr>
+        `;
+      });
+    }
+
+    async function update(q) {
+      const answer = document.getElementById('answer_' + btoa(decodeURIComponent(q))).value;
+      await fetch("/api/v1/hackrx/cache", {
+        method: "PUT",
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({question: decodeURIComponent(q), answer})
+      });
+      loadCache();
+    }
+
+    async function del(q) {
+      await fetch(`/api/v1/hackrx/cache?question=${q}`, { method: "DELETE" });
+      loadCache();
+    }
+
+    window.onload = loadCache;
+  </script>
+</head>
+<body>
+  <h1>QA Cache Manager</h1>
+  <div id="cacheList"></div>
+</body>
+</html>

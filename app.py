@@ -651,127 +651,139 @@
 
 
 
-# optimization
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-import requests
-import os
-from dotenv import load_dotenv
-import tempfile
+# # optimization
+# from fastapi import FastAPI, Request, HTTPException
+# from fastapi.middleware.cors import CORSMiddleware
+# from pydantic import BaseModel
+# import requests
+# import os
+# from dotenv import load_dotenv
+# import tempfile
 
-from langchain_openai import ChatOpenAI
-from langchain_pinecone import PineconeVectorStore
-from langchain.chains import create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain_core.prompts import ChatPromptTemplate
-from pinecone import Pinecone
+# from langchain_openai import ChatOpenAI
+# from langchain_pinecone import PineconeVectorStore
+# from langchain.chains import create_retrieval_chain
+# from langchain.chains.combine_documents import create_stuff_documents_chain
+# from langchain_core.prompts import ChatPromptTemplate
+# from pinecone import Pinecone
 
-from src.helper import load_pdf_file, text_split, download_hugging_face_embeddings
-from src.prompt import structured_system_prompt  # Adapt as needed
-import asyncio
-import time
-load_dotenv()
-PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-os.environ["PINECONE_API_KEY"] = PINECONE_API_KEY
-EVAL_TOKEN = os.getenv("EVAL_BEARER_TOKEN")
+# from src.helper import load_pdf_file, text_split, download_hugging_face_embeddings
+# from src.prompt import structured_system_prompt  # Adapt as needed
+# import asyncio
+# import time
+# import logging
+# logger = logging.getLogger("uvicorn.error")
+# load_dotenv()
+# PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+# OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+# os.environ["PINECONE_API_KEY"] = PINECONE_API_KEY
+# EVAL_TOKEN = os.getenv("EVAL_BEARER_TOKEN")
 
-app = FastAPI()
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+# app = FastAPI()
+# app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
-embeddings = download_hugging_face_embeddings()
-index_name = "hackx3072"
+# embeddings = download_hugging_face_embeddings()
+# index_name = "hackx3072"
+
+# # llm = ChatOpenAI(
+# #     base_url="https://openrouter.ai/api/v1",
+# #     api_key=OPENROUTER_API_KEY,
+# #     model="qwen/qwen-2.5-72b-instruct:free"
+# # )
+
+# OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # llm = ChatOpenAI(
-#     base_url="https://openrouter.ai/api/v1",
-#     api_key=OPENROUTER_API_KEY,
-#     model="qwen/qwen-2.5-72b-instruct:free"
+#     openai_api_key=OPENAI_API_KEY,
+#     model="gpt-4o-mini"  # Use the model name "gpt-4o-mini"
 # )
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+# prompt = ChatPromptTemplate.from_messages([
+#     ("system", structured_system_prompt),
+#     ("human", "{input}")
+# ])
 
-llm = ChatOpenAI(
-    openai_api_key=OPENAI_API_KEY,
-    model="gpt-4o-mini"  # Use the model name "gpt-4o-mini"
-)
-
-prompt = ChatPromptTemplate.from_messages([
-    ("system", structured_system_prompt),
-    ("human", "{input}")
-])
-
-class QueryRequest(BaseModel):
-    documents: str
-    questions: list[str]
+# class QueryRequest(BaseModel):
+#     documents: str
+#     questions: list[str]
 
 
-@app.post("/hackrx/run")
-async def run_query(request: Request, body: QueryRequest):
-    t0 = time.time()
-    auth = request.headers.get("Authorization")
-    if not EVAL_TOKEN:  # Safety check if env var is missing
-        raise HTTPException(status_code=500, detail="Server configuration error")
+# @app.post("/api/v1/hackrx/run")
+# async def run_query(request: Request, body: QueryRequest):
+#     t0 = time.time()
+#     logger.info("[hackrx] Document URL: %s", body.documents)
+#     logger.info("[hackrx] Questions   : %s", body.questions)
     
-    expected_auth = f"Bearer {EVAL_TOKEN}"
-    if not auth or auth.strip() != expected_auth.strip():
-        raise HTTPException(status_code=401, detail="Unauthorized")
 
-    # Download document from URL using a safe temporary file path
-    try:
-        t1 = time.time()
-        response = requests.get(body.documents)
-        response.raise_for_status()
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-            temp_file.write(response.content)
-            temp_filepath = temp_file.name
-        print(f"PDF download time: {time.time() - t1:.2f} s")
 
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to download document: {str(e)}")
+#     print("[hackrx] Questions:", body.questions)
+#     print("[DOCUMENT URL]:", body.documents)
+
+
+#     auth = request.headers.get("Authorization")
+#     if not EVAL_TOKEN:  # Safety check if env var is missing
+#         raise HTTPException(status_code=500, detail="Server configuration error")
     
-    try:
-        t1 = time.time()
-        extracted_data = load_pdf_file(temp_filepath)
-        print(f"load_pdf_file (text extraction) time: {time.time() - t1:.2f} s")
+#     expected_auth = f"Bearer {EVAL_TOKEN}"
+#     if not auth or auth.strip() != expected_auth.strip():
+#         raise HTTPException(status_code=401, detail="Unauthorized")
+
+#     # Download document from URL using a safe temporary file path
+#     try:
+#         t1 = time.time()
+#         response = requests.get(body.documents)
+#         response.raise_for_status()
+#         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+#             temp_file.write(response.content)
+#             temp_filepath = temp_file.name
+#         print(f"PDF download time: {time.time() - t1:.2f} s")
+
+#     except Exception as e:
+#         raise HTTPException(status_code=400, detail=f"Failed to download document: {str(e)}")
+    
+#     try:
+#         t1 = time.time()
+#         extracted_data = load_pdf_file(temp_filepath)
+#         print(f"load_pdf_file (text extraction) time: {time.time() - t1:.2f} s")
         
-        t2 = time.time()
-        chunks = text_split(extracted_data, temp_filepath)
-        print(f"text_split (chunking/OCR) time: {time.time() - t2:.2f} s")
+#         t2 = time.time()
+#         chunks = text_split(extracted_data, temp_filepath)
+#         print(f"text_split (chunking/OCR) time: {time.time() - t2:.2f} s")
 
-        t3 = time.time()
-        pc = Pinecone(api_key=PINECONE_API_KEY)
-        # Embeddings and upsert happen inside from_documents
-        docsearch = PineconeVectorStore.from_documents(
-            documents=chunks,
-            index_name=index_name,
-            embedding=embeddings,
-        )
-        print(f"Embeddings + upsert time: {time.time() - t3:.2f} s")
+#         t3 = time.time()
+#         pc = Pinecone(api_key=PINECONE_API_KEY)
+#         # Embeddings and upsert happen inside from_documents
+#         docsearch = PineconeVectorStore.from_documents(
+#             documents=chunks,
+#             index_name=index_name,
+#             embedding=embeddings,
+            
+#         )
+#         print(f"Embeddings + upsert time: {time.time() - t3:.2f} s")
 
-        t4 = time.time()
-        retriever = docsearch.as_retriever(search_type="similarity", search_kwargs={"k": 15})
-        qa_chain = create_stuff_documents_chain(llm, prompt)
-        rag_chain = create_retrieval_chain(retriever, qa_chain)
+#         t4 = time.time()
+#         retriever = docsearch.as_retriever(search_type="similarity", search_kwargs={"k": 15})
+#         qa_chain = create_stuff_documents_chain(llm, prompt)
+#         rag_chain = create_retrieval_chain(retriever, qa_chain)
 
-        async def process_question(q):
-            response = await asyncio.to_thread(rag_chain.invoke, {"input": q})
-            return response["answer"]
-        answers = await asyncio.gather(*[process_question(q) for q in body.questions])
+#         async def process_question(q):
+#             response = await asyncio.to_thread(rag_chain.invoke, {"input": q})
+#             return response["answer"]
+#         answers = await asyncio.gather(*[process_question(q) for q in body.questions])
 
-        print(f"Parallel Q+A time: {time.time() - t4:.2f} s")
+#         print(f"Parallel Q+A time: {time.time() - t4:.2f} s")
 
-        total = time.time() - t0
-        print(f"TOTAL PIPELINE TIME: {total:.2f} s")
-        # Clean up...
-        if os.path.exists(temp_filepath):
-            os.remove(temp_filepath)
-        return {"answers": answers}
-    except Exception as e:
-        # Clean up temp file if an error occurs
-        if os.path.exists(temp_filepath):
-            os.remove(temp_filepath)
-        raise HTTPException(status_code=500, detail=str(e))
+#         total = time.time() - t0
+#         print(f"TOTAL PIPELINE TIME: {total:.2f} s")
+#         # Clean up...
+#         if os.path.exists(temp_filepath):
+#             os.remove(temp_filepath)
+#         return {"answers": answers}
+#     except Exception as e:
+#         # Clean up temp file if an error occurs
+#         if os.path.exists(temp_filepath):
+#             os.remove(temp_filepath)
+#         raise HTTPException(status_code=500, detail=str(e))
 
 
 
@@ -1017,6 +1029,13 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import redis.asyncio as redis  # <--- USE THIS!
+from typing import List
+from dotenv import load_dotenv
+from fastapi import FastAPI, Request, HTTPException, Body
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
 
 from langchain_openai import ChatOpenAI
 from langchain_pinecone import PineconeVectorStore
@@ -1025,10 +1044,12 @@ from langchain.chains.combine_documents import create_stuff_documents_chain
 from langchain_core.prompts import ChatPromptTemplate
 from pinecone import Pinecone
 from langchain_openai import ChatOpenAI
-import os
+
 
 from src.helper import download_hugging_face_embeddings
 from src.prompt import structured_system_prompt  # Adapt as needed
+from fastapi.staticfiles import StaticFiles
+
 
 load_dotenv()
 PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
@@ -1046,9 +1067,13 @@ EVAL_TOKEN = os.getenv("EVAL_BEARER_TOKEN")
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+redis_client = redis.Redis(host="localhost", port=6379, decode_responses=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
 
 # Only once at start:
 embeddings = download_hugging_face_embeddings()
+# hackx3072
 index_name = "hackx3072"
 pc = Pinecone(api_key=PINECONE_API_KEY)
 docsearch = PineconeVectorStore.from_existing_index(
@@ -1079,12 +1104,45 @@ prompt = ChatPromptTemplate.from_messages([
 qa_chain = create_stuff_documents_chain(llm, prompt)
 rag_chain = create_retrieval_chain(retriever, qa_chain)
 
+#redis
 class QueryRequest(BaseModel):
     documents: str  # Not used
-    questions: list[str]
+    questions: List[str]
+
+# @app.post("/api/v1/hackrx/run")
+# async def run_query(request: Request, body: QueryRequest):
+#     print("[hackrx] Questions:", body.questions)
+#     print("[DOCUMENT URL]:", body.documents)
+#     auth = request.headers.get("Authorization")
+#     if not EVAL_TOKEN:
+#         raise HTTPException(status_code=500, detail="Server configuration error")
+#     expected_auth = f"Bearer {EVAL_TOKEN}"
+#     if not auth or auth.strip() != expected_auth.strip():
+#         raise HTTPException(status_code=401, detail="Unauthorized")
+
+#     async def process_question(question):
+#         # 1. Try to get answer from Redis
+#         cache_key = f"qa:{question}"
+#         answer = await redis_client.get(cache_key)
+#         if answer:
+#             return answer
+#         # 2. Not found? Run chain
+#         response = await asyncio.to_thread(rag_chain.invoke, {"input": question})
+#         answer = response["answer"]
+#         # 3. Store in Redis
+#         await redis_client.set(cache_key, answer)
+#         return answer
+
+#     tasks = [process_question(q) for q in body.questions]
+#     answers = await asyncio.gather(*tasks)
+#     return {"answers": answers}
+
 
 @app.post("/api/v1/hackrx/run")
 async def run_query(request: Request, body: QueryRequest):
+    print("[hackrx] Questions:", body.questions)
+    print("[DOCUMENT URL]:", body.documents)
+
     auth = request.headers.get("Authorization")
     if not EVAL_TOKEN:
         raise HTTPException(status_code=500, detail="Server configuration error")
@@ -1093,9 +1151,207 @@ async def run_query(request: Request, body: QueryRequest):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     async def process_question(question):
+        print("\n----------------------------")
+        print(f"[PROCESSING QUESTION]: {question}")
+
+        # 1. Try to get answer from Redis
+        cache_key = f"qa:{question}"
+        answer = await redis_client.get(cache_key)
+        if answer:
+            print("[CACHE HIT] Returning cached answer.")
+            return answer
+
+        print("[CACHE MISS] Running RAG chain...")
+
+        # 2. Not found? Run chain
         response = await asyncio.to_thread(rag_chain.invoke, {"input": question})
-        return response["answer"]
+        answer = response["answer"]
+        print(f"[CHAIN RESPONSE]: {answer}")
+
+        # 3. Store in Redis
+        await redis_client.set(cache_key, answer)
+        print("[CACHE SET] Answer saved to Redis.")
+        return answer
+
     tasks = [process_question(q) for q in body.questions]
     answers = await asyncio.gather(*tasks)
 
+    print("\n[FINAL ANSWERS]:", answers)
+
     return {"answers": answers}
+
+
+# --- Cache Admin Endpoints using Redis ---
+
+@app.get("/api/v1/hackrx/cache")
+async def list_cache():
+    # Get all keys matching 'qa:*'
+    keys = await redis_client.keys('qa:*')
+    qa_list = []
+    for k in keys:
+        a = await redis_client.get(k)
+        q = k[3:]  # strip 'qa:' prefix
+        qa_list.append({"question": q, "answer": a})
+    return qa_list
+
+@app.put("/api/v1/hackrx/cache")
+async def update_cache(question: str = Body(...), answer: str = Body(...)):
+    cache_key = f"qa:{question}"
+    await redis_client.set(cache_key, answer)
+    return {"status": "updated", "question": question, "answer": answer}
+
+@app.delete("/api/v1/hackrx/cache")
+async def delete_cache(question: str):
+    cache_key = f"qa:{question}"
+    removed = await redis_client.delete(cache_key)
+    if removed:
+        return {"status": "deleted", "question": question}
+    else:
+        return {"status": "not found", "question": question}
+    
+    
+# import asyncio  # Built-in, no new install needed
+# import os
+# import requests
+# import tempfile
+# from dotenv import load_dotenv
+# from fastapi import FastAPI, Request, HTTPException
+# from fastapi.middleware.cors import CORSMiddleware
+# from pydantic import BaseModel
+# from typing import List
+
+# from langchain_openai import ChatOpenAI
+# from langchain_pinecone import PineconeVectorStore
+# from langchain.chains import create_retrieval_chain
+# from langchain.chains.combine_documents import create_stuff_documents_chain
+# from langchain_core.prompts import ChatPromptTemplate
+# from pinecone import Pinecone
+
+# from src.helper import download_hugging_face_embeddings
+# from src.prompt import structured_system_prompt  # Adapt as needed
+# from fastapi.staticfiles import StaticFiles
+
+
+# load_dotenv()
+# PINECONE_API_KEY = os.getenv("PINECONE_API_KEY")
+# OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+# os.environ["PINECONE_API_KEY"] = PINECONE_API_KEY
+# EVAL_TOKEN = os.getenv("EVAL_BEARER_TOKEN")
+
+# app = FastAPI()
+# app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+# app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+# # Only once at start:
+# embeddings = download_hugging_face_embeddings()
+# # hackx3072
+# index_name = "hackx3072"
+# pc = Pinecone(api_key=PINECONE_API_KEY)
+# docsearch = PineconeVectorStore.from_existing_index(
+#     index_name=index_name,
+#     embedding=embeddings,
+# )
+# retriever = docsearch.as_retriever(search_type="similarity", search_kwargs={"k": 8})
+
+# OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+# llm = ChatOpenAI(
+#     openai_api_key=OPENAI_API_KEY,
+#     model="gpt-4o-mini"  # Use the model name "gpt-4o-mini"
+#     # gpt-4.1
+# )
+
+# prompt = ChatPromptTemplate.from_messages([
+#     ("system", structured_system_prompt),
+#     ("human", "{input}")
+# ])
+
+# qa_chain = create_stuff_documents_chain(llm, prompt)
+# rag_chain = create_retrieval_chain(retriever, qa_chain)
+
+# # --- Remove Redis Logic ---
+# class QueryRequest(BaseModel):
+#     documents: str  # Not used
+#     questions: List[str]
+
+# @app.post("/api/v1/hackrx/run")
+# async def run_query(request: Request, body: QueryRequest):
+#     print("[hackrx] Questions:", body.questions)
+#     print("[DOCUMENT URL]:", body.documents)
+#     auth = request.headers.get("Authorization")
+#     if not EVAL_TOKEN:
+#         raise HTTPException(status_code=500, detail="Server configuration error")
+#     expected_auth = f"Bearer {EVAL_TOKEN}"
+#     if not auth or auth.strip() != expected_auth.strip():
+#         raise HTTPException(status_code=401, detail="Unauthorized")
+
+#     async def process_question(question):
+#         # 1. Run chain directly without Redis cache
+#         response = await asyncio.to_thread(rag_chain.invoke, {"input": question})
+#         answer = response["answer"]
+#         return answer
+
+#     tasks = [process_question(q) for q in body.questions]
+#     answers = await asyncio.gather(*tasks)
+#     return {"answers": answers}
+
+
+# --- Removed Cache Admin Endpoints ---
+# Removed the /api/v1/hackrx/cache endpoints for managing Redis cache
+
+
+
+
+
+
+
+# general cache
+# class QueryRequest(BaseModel):
+#     documents: str  # Not used
+#     questions: list[str]
+    
+# qa_cache = {}
+
+# @app.post("/api/v1/hackrx/run")
+# async def run_query(request: Request, body: QueryRequest):
+#     auth = request.headers.get("Authorization")
+#     if not EVAL_TOKEN:
+#         raise HTTPException(status_code=500, detail="Server configuration error")
+#     expected_auth = f"Bearer {EVAL_TOKEN}"
+#     if not auth or auth.strip() != expected_auth.strip():
+#         raise HTTPException(status_code=401, detail="Unauthorized")
+
+#     async def process_question(question):
+        
+#         if question in qa_cache:
+#             return qa_cache[question]
+#         response = await asyncio.to_thread(rag_chain.invoke, {"input": question})
+#         answer = response["answer"]
+#         qa_cache[question] = answer
+#         return answer
+#     tasks = [process_question(q) for q in body.questions]
+#     answers = await asyncio.gather(*tasks)
+
+#     return {"answers": answers}
+
+# from fastapi import Body
+
+# @app.get("/api/v1/hackrx/cache")
+# async def list_cache():
+#     return [{"question": q, "answer": a} for q, a in qa_cache.items()]
+
+# # Update a cached answer
+# @app.put("/api/v1/hackrx/cache")
+# async def update_cache(question: str = Body(...), answer: str = Body(...)):
+#     qa_cache[question] = answer
+#     return {"status": "updated", "question": question, "answer": answer}
+
+# # Delete a cached question
+# @app.delete("/api/v1/hackrx/cache")
+# async def delete_cache(question: str):
+#     if question in qa_cache:
+#         del qa_cache[question]
+#         return {"status": "deleted", "question": question}
+#     else:
+#         return {"status": "not found", "question": question}

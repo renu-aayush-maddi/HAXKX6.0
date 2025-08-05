@@ -12,7 +12,7 @@ pc = Pinecone(api_key=PINECONE_API_KEY)
 
 
 # Connect to the index
-index_name = "hackx-v2v"
+index_name = "hackx3072"
 index = pc.Index(index_name)
 
 # Delete all vectors

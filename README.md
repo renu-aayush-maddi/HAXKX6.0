@@ -46,3 +46,7 @@ uvicorn app:app --host 0.0.0.0 --port 8000 --log-level error
 
 QWEN 3, GLM 4.5 and MiniMax are crazy models. And QWEN Coder and MiniMax are damn good at tool calling! Try again 
 And yes, the new Kimi K2 - these are bonkers models!
+sudo service redis-server start
+redis-cli
+> ping
+PONG
